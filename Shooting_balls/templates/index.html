@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shooting Balls Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        #game-area {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+        .ball {
+            position: absolute;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        #gun {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform-origin: center bottom;
+            width: 15px;
+            height: 60px;
+            background-color: #333;
+            border-radius: 3px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+            color: white;
+        }
+        #timer {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            color: white;
+        }
+        .bullet {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-area">
+        <div id="gun"></div>
+        <div id="score">Score: 0</div>
+        <div id="timer">Time: 180</div>
+    </div>
+
+    <script>
+        const gameArea = document.getElementById('game-area');
+        const scoreDisplay = document.getElementById('score');
+        const timerDisplay = document.getElementById('timer');
+        const gun = document.getElementById('gun');
+        let gunAngle = 0;
+        const gunMaxRotationSpeed = 3;  // Reduced from 5
+        let currentRotationSpeed = 0;
+        const rotationAcceleration = 0.15;  // Reduced from 0.3
+        const rotationDeceleration = 0.1;   // Reduced from 0.2
+        const bulletColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+        const keys = { left: false, right: false };
+        let score = 0;
+        let timeLeft = 180;
+        const ballFallSpeed = 5;
+        const activeIntervals = new Set();
+        let gameActive = true;
+        let canShoot = true;
+        const shootCooldown = 500; // milliseconds between shots
+
+        function createBall() {
+            if (!gameActive) return;
+            
+            const ball = document.createElement('div');
+            ball.classList.add('ball');
+            const size = Math.random() * 50 + 20;
+            ball.style.width = `${size}px`;
+            ball.style.height = `${size}px`;
+            ball.style.backgroundColor = `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+            
+            // Ensure ball stays within screen bounds
+            const maxLeft = window.innerWidth - size;
+            ball.style.left = `${Math.random() * maxLeft}px`;
+            ball.style.top = '0px';
+            gameArea.appendChild(ball);
+
+            const fallInterval = setInterval(() => {
+                const top = parseInt(ball.style.top);
+                if (top >= window.innerHeight) {
+                    clearInterval(fallInterval);
+                    activeIntervals.delete(fallInterval);
+                    if (ball.parentNode === gameArea) {
+                        gameArea.removeChild(ball);
+                    }
+                } else {
+                    ball.style.top = `${top + ballFallSpeed}px`;
+                }
+            }, 50);
+            
+            activeIntervals.add(fallInterval);
+
+            ball.addEventListener('click', () => {
+                const points = Math.floor(100 / size);
+                score += points;
+                scoreDisplay.textContent = `Score: ${score}`;
+                if (ball.parentNode === gameArea) {
+                    gameArea.removeChild(ball);
+                }
+                clearInterval(fallInterval);
+                activeIntervals.delete(fallInterval);
+            });
+        }
+
+        function shoot() {
+            if (!canShoot || !gameActive) return;
+            
+            const bullet = document.createElement('div');
+            bullet.classList.add('bullet');
+            const bulletColor = bulletColors[Math.floor(Math.random() * bulletColors.length)];
+            bullet.style.backgroundColor = bulletColor;
+            bullet.style.boxShadow = `0 0 5px ${bulletColor}`;
+            const gunRect = gun.getBoundingClientRect();
+            
+            // Updated bullet starting position for longer gun
+            const radians = (gunAngle * Math.PI) / 180;
+            const gunLength = 60; // Match gun height
+            const gunTipX = gunRect.left + gunRect.width/2 - 5;
+            const gunTipY = gunRect.top - Math.cos(radians) * (gunLength - 40);
+            const offsetX = Math.sin(radians) * gunLength;
+            
+            bullet.style.left = `${gunTipX + offsetX}px`;
+            bullet.style.top = `${gunTipY}px`;
+            gameArea.appendChild(bullet);
+            
+            // Calculate bullet velocity components
+            const bulletSpeed = 15;
+            const velocityX = Math.sin(radians) * bulletSpeed;
+            const velocityY = -Math.cos(radians) * bulletSpeed;
+            
+            let currentX = gunTipX + offsetX;
+            let currentY = gunTipY;
+            
+            const bulletInterval = setInterval(() => {
+                currentX += velocityX;
+                currentY += velocityY;
+                
+                if (currentY < 0 || currentY > window.innerHeight || 
+                    currentX < 0 || currentX > window.innerWidth) {
+                    clearInterval(bulletInterval);
+                    activeIntervals.delete(bulletInterval);
+                    if (bullet.parentNode === gameArea) {
+                        gameArea.removeChild(bullet);
+                    }
+                } else {
+                    bullet.style.left = `${currentX}px`;
+                    bullet.style.top = `${currentY}px`;
+                    checkBulletCollision(bullet, bulletInterval);
+                }
+            }, 20);
+            
+            activeIntervals.add(bulletInterval);
+            canShoot = false;
+            setTimeout(() => canShoot = true, shootCooldown);
+        }
+
+        // Replace the keydown event listener with these two event listeners
+        document.addEventListener('keydown', (event) => {
+            if (!gameActive) return;
+            
+            switch(event.code) {
+                case 'ArrowLeft':
+                    keys.left = true;
+                    event.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    keys.right = true;
+                    event.preventDefault();
+                    break;
+                case 'Space':
+                    shoot();
+                    event.preventDefault();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            switch(event.code) {
+                case 'ArrowLeft':
+                    keys.left = false;
+                    break;
+                case 'ArrowRight':
+                    keys.right = false;
+                    break;
+            }
+        });
+
+        function updateGunRotation() {
+            if (keys.left) {
+                currentRotationSpeed = Math.max(
+                    -gunMaxRotationSpeed,
+                    currentRotationSpeed - rotationAcceleration
+                );
+            } else if (keys.right) {
+                currentRotationSpeed = Math.min(
+                    gunMaxRotationSpeed,
+                    currentRotationSpeed + rotationAcceleration
+                );
+            } else {
+                // Smoother deceleration
+                currentRotationSpeed *= 0.95;
+                if (Math.abs(currentRotationSpeed) < 0.01) {
+                    currentRotationSpeed = 0;
+                }
+            }
+
+            if (currentRotationSpeed !== 0) {
+                gunAngle = Math.max(-85, Math.min(85, gunAngle + currentRotationSpeed));
+                gun.style.transform = `translateX(-50%) rotate(${gunAngle}deg)`;
+            }
+
+            requestAnimationFrame(updateGunRotation);
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(updateGunRotation);
+
+        // Update collision detection for angled shots
+        function checkBulletCollision(bullet, bulletInterval) {
+            const bulletRect = bullet.getBoundingClientRect();
+            const balls = document.querySelectorAll('.ball');
+            
+            for (const ball of balls) {
+                const ballRect = ball.getBoundingClientRect();
+                if (isColliding(bulletRect, ballRect)) {
+                    const size = parseInt(ball.style.width);
+                    const points = Math.floor(100 / size);
+                    score += points;
+                    scoreDisplay.textContent = `Score: ${score}`;
+                    
+                    if (ball.parentNode === gameArea) gameArea.removeChild(ball);
+                    if (bullet.parentNode === gameArea) gameArea.removeChild(bullet);
+                    clearInterval(bulletInterval);
+                    activeIntervals.delete(bulletInterval);
+                    break;
+                }
+            }
+        }
+
+        function isColliding(rect1, rect2) {
+            return !(rect1.right < rect2.left || 
+                    rect1.left > rect2.right || 
+                    rect1.bottom < rect2.top || 
+                    rect1.top > rect2.bottom);
+        }
+
+        const timerInterval = setInterval(() => {
+            timeLeft--;
+            timerDisplay.textContent = `Time: ${timeLeft}`;
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                endGame();
+            }
+        }, 1000);
+        activeIntervals.add(timerInterval);
+
+        function endGame() {
+            gameActive = false;
+            // Clear all active intervals
+            activeIntervals.forEach(interval => clearInterval(interval));
+            activeIntervals.clear();
+            
+            // Remove all remaining balls
+            const balls = document.querySelectorAll('.ball');
+            balls.forEach(ball => {
+                if (ball.parentNode === gameArea) {
+                    gameArea.removeChild(ball);
+                }
+            });
+
+            alert(`Game Over! Your score is ${score}`);
+            const name = prompt('Enter your name for the high score board:');
+            if (name) {
+                fetch('/submit_score', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name, score }),
+                })
+                .then(response => response.json())
+                .then(data => console.log(data))
+                .catch(error => console.error('Error submitting score:', error));
+            }
+        }
+
+        const ballCreationInterval = setInterval(createBall, 1000);
+        activeIntervals.add(ballCreationInterval);
+    </script>
+</body>
+</html>
